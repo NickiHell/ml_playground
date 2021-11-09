@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from loguru import logger
 
 # Hyper Parameters
-BATCH_SIZE = 32
+BATCH_SIZE = 1024
 LR = 0.01  # learning rate
 EPSILON = 0.9  # greedy policy
 GAMMA = 0.9  # reward discount
