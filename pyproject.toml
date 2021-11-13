@@ -11,6 +11,7 @@ torch = "*"
 scipy = "*"
 torchvision = "*"
 matplotlib = "*"
+numpy = "*"
 loguru = "*"
 pyglet = "*"
 
