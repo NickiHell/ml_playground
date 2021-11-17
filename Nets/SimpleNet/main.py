@@ -1,5 +1,5 @@
 import torchvision
-from torch import nn
+from torch import nn, optim
 from torch.autograd.grad_mode import F
 from torch.utils import data
 from torchvision import transforms
@@ -46,3 +46,4 @@ if __name__ == '__main__':
 
 
     simplenet = SimpleNet()
+    optimizer = optim.Adam(simplenet.parameters(), lr=0.001)
