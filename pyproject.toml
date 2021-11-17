@@ -8,7 +8,6 @@ authors = ["NickiHell <nickihell@gmail.com>"]
 python = "^3.9"
 gym = "*"
 torch = "*"
-scipy = "*"
 torchvision = "*"
 matplotlib = "*"
 numpy = "*"
