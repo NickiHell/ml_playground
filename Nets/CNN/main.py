@@ -1,4 +1,5 @@
 from functools import partial
+from os import walk
 from typing import Tuple
 
 import torch
@@ -69,7 +70,7 @@ class CNNNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> None:
+    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> str:
         labels = ['cat', 'fish']
 
         img = Image.open(path)
@@ -80,10 +81,7 @@ class CNNNet(nn.Module):
         prediction = F.softmax(self(img), dim=1)
         prediction = prediction.argmax()
 
-        if labels[prediction] in path.split('/'):
-            logger.success(f'Prediction of {path.split("/")[-1]} is {labels[prediction]}')
-        else:
-            logger.error(f'Prediction of {path.split("/")[-1]} is not {labels[prediction]}')
+        return labels[prediction]
 
     def save_model(self, path: str = "result/cnn_net") -> None:
         torch.save(self.state_dict(), path)
@@ -162,6 +160,17 @@ if __name__ == '__main__':
     cnn_net = CNNNet()
     # cnn_net.load_model()
     cnn_net.train_net()
-    cnn_net.show_plot()
-    cnn_net.predict()
-    cnn_net.save_model()
+    # cnn_net.show_plot()
+    # cnn_net.predict()
+    # cnn_net.save_model()
+
+    all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
+    fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
+    cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
+    fish = [''.join(('dataset/val/fish/', x)) for x in fish]
+    cats = [''.join(('dataset/val/cat/', x)) for x in cats]
+
+    cat_errors = len([cnn_net.predict(x) for x in cats if cnn_net.predict(x) == 'fish'])
+    fish_errors = len([cnn_net.predict(x) for x in fish if cnn_net.predict(x) == 'cat'])
+
+    logger.warning(f'Cat errors: {cat_errors}/{len(cats)}, Fish errors: {fish_errors}/{len(fish)}')
