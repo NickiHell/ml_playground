@@ -1,15 +1,15 @@
 from functools import partial
+from os import walk
 from typing import Tuple
 
 import torch
 import torch.nn as nn
-import torch.utils.data
 from PIL import Image
 from loguru import logger
 from matplotlib import pyplot as plt
 from torch import Tensor
-from torch.autograd.grad_mode import F
 from torch.nn import CrossEntropyLoss
+from torch.nn.functional import softmax, relu, selu
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -44,27 +44,30 @@ class SimpleNet(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         x = x.reshape(-1, 12288)
-        x = F.relu(self.fc1(x))
-        x = F.selu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        x = relu(self.fc1(x))
+        x = selu(self.fc2(x))
+        x = relu(self.fc3(x))
         x = self.fc4(x)
         return x
 
-    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> None:
+    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> str:
         labels = ['cat', 'fish']
 
-        img = Image.open(path)
+        img: Image = Image.open(path)
+        # print(img.fp.name)
         img = self._image_transforms()(img).to(self.device)
         img = torch.unsqueeze(img, 0)
 
         self.eval()
-        prediction = F.softmax(self(img), dim=1)
+        prediction = softmax(self(img), dim=1)
         prediction = prediction.argmax()
 
-        if labels[prediction] in path.split('/'):
-            logger.success(f'Prediction of {path.split("/")[-1]} is {labels[prediction]}')
-        else:
-            logger.error(f'Prediction of {path.split("/")[-1]} is not {labels[prediction]}')
+        return labels[prediction]
+
+        # if labels[prediction] in path.split('/'):
+        #     logger.success(f'Prediction of {path.split("/")[-1]} is {labels[prediction]}')
+        # else:
+        #     logger.error(f'Prediction of {path.split("/")[-1]} is not {labels[prediction]}')
 
     def save_model(self, path: str = "result/simple_net") -> None:
         torch.save(self.state_dict(), path)
@@ -106,7 +109,7 @@ class SimpleNet(nn.Module):
                 targets = targets.to(self.device)
                 loss = self.loss_fn(output, targets)
                 valid_loss += loss.data.item() * inputs.size(0)
-                correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
+                correct = torch.eq(torch.max(softmax(output, dim=1), dim=1)[1], targets)
                 num_correct += torch.sum(correct).item()
                 num_examples += correct.shape[0]
             valid_loss /= len(val_data_loader.dataset)
@@ -145,14 +148,16 @@ if __name__ == '__main__':
     simple_net.load_model()
     # simple_net.train_net()
     # simple_net.show_plot()
-    simple_net.predict()
+    # simple_net.predict()
     # simple_net.save_model()
 
-    # all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
-    # fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
-    # cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
-    # fish = [''.join(('dataset/val/fish/', x)) for x in fish]
-    # cats = [''.join(('dataset/val/cat/', x)) for x in cats]
-    #
-    # all = cats + fish
-    # [simple_net.predict(x) for x in all]
+    all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
+    fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
+    cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
+    fish = [''.join(('dataset/val/fish/', x)) for x in fish]
+    cats = [''.join(('dataset/val/cat/', x)) for x in cats]
+
+    cat_errors = len([simple_net.predict(x) for x in cats if simple_net.predict(x) == 'fish'])
+    fish_errors = len([simple_net.predict(x) for x in fish if simple_net.predict(x) == 'cat'])
+
+    logger.warning(f'Cat errors: {cat_errors}/{len(cats)}, Fish errors: {fish_errors}/{len(fish)}')
