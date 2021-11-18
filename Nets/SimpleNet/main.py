@@ -3,12 +3,12 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data
 from PIL import Image
 from loguru import logger
 from matplotlib import pyplot as plt
 from torch import Tensor
+from torch.autograd.grad_mode import F
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
