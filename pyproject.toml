@@ -15,6 +15,7 @@ loguru = "*"
 pyglet = "*"
 pandas = "^1.3.4"
 urllib3 = "^1.26.7"
+device = "^0.1"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"
