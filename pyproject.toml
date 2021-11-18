@@ -7,12 +7,13 @@ authors = ["NickiHell <nickihell@gmail.com>"]
 [tool.poetry.dependencies]
 python = "^3.9"
 gym = "*"
-torch = "*"
-torchvision = "*"
 matplotlib = "*"
 numpy = "*"
 loguru = "*"
 pyglet = "*"
+torchvision = "*"
+torchaudio = "*"
+torch = "*"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"
