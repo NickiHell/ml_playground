@@ -1,127 +1,158 @@
+from functools import partial
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import torch.utils.data
-import torchvision
 from PIL import Image
 from loguru import logger
 from matplotlib import pyplot as plt
 from torch import Tensor
-from torch.utils import data
+from torch.nn import CrossEntropyLoss
+from torch.optim import Adam
+from torch.utils.data import DataLoader
 from torchvision import transforms
-
-if __name__ == '__main__':
-    train_data_path = 'dataset/train/'
-    val_data_path = 'dataset/val/'
-    test_data_path = 'dataset/test/'
-    batch_size = 64
-
-    img_transforms = transforms.Compose([
-        transforms.Resize((64, 64)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
-
-    train_data = torchvision.datasets.ImageFolder(root=train_data_path, transform=img_transforms)
-    val_data = torchvision.datasets.ImageFolder(root=val_data_path, transform=img_transforms)
-    test_data = torchvision.datasets.ImageFolder(root=test_data_path, transform=img_transforms)
-
-    train_data_loader = data.DataLoader(train_data, batch_size=batch_size)
-    val_data_loader = data.DataLoader(val_data, batch_size=batch_size)
-    test_data_loader = data.DataLoader(test_data, batch_size=batch_size)
+from torchvision.datasets import ImageFolder
+from torchvision.transforms import Compose
 
 
-    class SimpleNet(nn.Module):
-        """Простая нейронка которая отличает кошек от собак"""
+class SimpleNet(nn.Module):
+    """Простая нейронка которая отличает кошек от собак"""
 
-        def __init__(self):
-            super().__init__()
-            self.fc1 = nn.Linear(12288, 84)
-            self.fc2 = nn.Linear(84, 50)
-            self.fc3 = nn.Linear(50, 25)
-            self.fc4 = nn.Linear(25, 2)
+    def __init__(self, batch_size: int = 64, epoch: int = 25) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(12288, 84)
+        self.fc2 = nn.Linear(84, 50)
+        self.fc3 = nn.Linear(50, 25)
+        self.fc4 = nn.Linear(25, 2)
 
-        def forward(self, x: Tensor):
-            x = x.reshape(-1, 12288)
-            x = F.relu(self.fc1(x))
-            x = F.selu(self.fc2(x))
-            x = F.relu(self.fc3(x))
-            x = self.fc4(x)
-            return x
+        self.batch_size = batch_size
+        self.epoch = epoch
+        self.train_data_path = 'dataset/train/'
+        self.val_data_path = 'dataset/val/'
+        self.test_data_path = 'dataset/test/'
 
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.optimizer = Adam(self.parameters(), lr=0.001)
+        self.loss_fn = CrossEntropyLoss()
+        self.to(self.device)
 
-    simple_net = SimpleNet()
+        logger.info(f'Device: {self.device.type}')
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+        self.accuracy = []
 
-    simple_net.to(device)
-    logger.info(f'Device: {device.type}')
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.reshape(-1, 12288)
+        x = F.relu(self.fc1(x))
+        x = F.selu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = self.fc4(x)
+        return x
 
-    optimizer = optim.Adam(simple_net.parameters(), lr=0.001)
+    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> None:
+        labels = ['cat', 'fish']
 
+        img = Image.open(path)
+        img = self._image_transforms()(img).to(self.device)
+        img = torch.unsqueeze(img, 0)
 
-    def train(model, optimizer, loss_fn, train_loader, val_loader, epochs=20, device="cpu"):
-        accuracy = []
-        for epoch in range(1, epochs + 1):
-            training_loss = 0.0
-            valid_loss = 0.0
-            model.train()
-            for batch in train_loader:
-                optimizer.zero_grad()
-                inputs, targets = batch
-                inputs = inputs.to(device)
-                targets = targets.to(device)
-                output = model(inputs)
-                loss = loss_fn(output, targets)
-                loss.backward()
-                optimizer.step()
-                training_loss += loss.data.item() * inputs.size(0)
-            training_loss /= len(train_loader.dataset)
+        self.eval()
+        prediction = F.softmax(self(img), dim=1)
+        prediction = prediction.argmax()
 
-            model.eval()
-            num_correct = 0
-            num_examples = 0
-            for batch in val_loader:
-                inputs, targets = batch
-                inputs = inputs.to(device)
-                output = model(inputs)
-                targets = targets.to(device)
-                loss = loss_fn(output, targets)
-                valid_loss += loss.data.item() * inputs.size(0)
-                correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
-                num_correct += torch.sum(correct).item()
-                num_examples += correct.shape[0]
-            valid_loss /= len(val_loader.dataset)
-            accuracy.append(num_correct / num_examples)
-            print('Epoch: {}, Training Loss: {:.2f}, Validation Loss: {:.2f}, accuracy = {:.2f}'.format(epoch,
-                                                                                                        training_loss,
-                                                                                                        valid_loss,
-                                                                                                        num_correct / num_examples))
-        plt.plot([x for x in range(1, epochs + 1)], [x for x in accuracy], 'r--')
+        if labels[prediction] in path.split('/'):
+            logger.success(f'Prediction of {path.split("/")[-1]} is {labels[prediction]}')
+        else:
+            logger.error(f'Prediction of {path.split("/")[-1]} is not {labels[prediction]}')
+
+    def save_model(self, path: str = "result/simple_net") -> None:
+        torch.save(self.state_dict(), path)
+
+    def load_model(self, path: str = "result/simple_net") -> None:
+        self.load_state_dict(torch.load(path))
+
+    def show_plot(self):
+        plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.show()
 
+    def train_net(self) -> None:
+        train_data_loader, val_data_loader, _ = self._collect_loaders()
+        for epoch in range(1, self.epoch + 1):
+            training_loss = 0.0
+            valid_loss = 0.0
+            self.train()
+            for batch in train_data_loader:
+                self.optimizer.zero_grad()
+                inputs, targets = batch
+                inputs = inputs.to(self.device)
+                targets = targets.to(self.device)
+                output = self(inputs)
+                loss = self.loss_fn(output, targets)
+                loss.backward()
+                self.optimizer.step()
+                training_loss += loss.data.item() * inputs.size(0)
+            training_loss /= len(train_data_loader.dataset)
 
-    train(simple_net, optimizer, torch.nn.CrossEntropyLoss(), train_data_loader, val_data_loader, epochs=25,
-          device=device.type)
+            self.eval()
+            num_correct = 0
+            num_examples = 0
+            for batch in val_data_loader:
+                inputs, targets = batch
+                inputs = inputs.to(self.device)
+                output = self(inputs)
+                targets = targets.to(self.device)
+                loss = self.loss_fn(output, targets)
+                valid_loss += loss.data.item() * inputs.size(0)
+                correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
+                num_correct += torch.sum(correct).item()
+                num_examples += correct.shape[0]
+            valid_loss /= len(val_data_loader.dataset)
+            self.accuracy.append(num_correct / num_examples)
+            logger.info(f'Epoch: {epoch}, Training Loss: {training_loss:.2f}, '
+                        f'Validation Loss: {valid_loss:.2f}, accuracy = {num_correct / num_examples:.2f}')
 
-    labels = ['cat', 'fish']
+    def _collect_data(self) -> Tuple[ImageFolder, ...]:
+        dataset = partial(ImageFolder)
+        image_transforms = self._image_transforms()
+        train_data = dataset(root=self.train_data_path, transform=image_transforms)
+        val_data = dataset(root=self.val_data_path, transform=image_transforms)
+        test_data = dataset(root=self.test_data_path, transform=image_transforms)
+        return train_data, val_data, test_data
 
-    img = Image.open("dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg")
-    img = img_transforms(img).to(device)
-    img = torch.unsqueeze(img, 0)
+    def _collect_loaders(self) -> Tuple[DataLoader, ...]:
+        loader = partial(DataLoader)
+        data: Tuple[ImageFolder, ...] = self._collect_data()
+        train_data_loader = loader(data[0], batch_size=self.batch_size)
+        val_data_loader = loader(data[1], batch_size=self.batch_size)
+        test_data_loader = loader(data[2], batch_size=self.batch_size)
+        return train_data_loader, val_data_loader, test_data_loader
 
-    simple_net.eval()
-    prediction = F.softmax(simple_net(img), dim=1)
-    prediction = prediction.argmax()
-    print(labels[prediction])
+    @staticmethod
+    def _image_transforms() -> Compose:
+        return transforms.Compose([
+            transforms.Resize((64, 64)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
 
-    torch.save(simple_net.state_dict(), "result/simple_net")
 
-    # simple_net_dict = torch.load('result/simple_net')
+if __name__ == '__main__':
+    simple_net = SimpleNet()
+    simple_net.load_model()
+    # simple_net.train_net()
+    # simple_net.show_plot()
+    simple_net.predict()
+    # simple_net.save_model()
+
+    # all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
+    # fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
+    # cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
+    # fish = [''.join(('dataset/val/fish/', x)) for x in fish]
+    # cats = [''.join(('dataset/val/cat/', x)) for x in cats]
+    #
+    # all = cats + fish
+    # [simple_net.predict(x) for x in all]
