@@ -9,6 +9,7 @@ import torch.utils.data
 from PIL import Image
 from loguru import logger
 from matplotlib import pyplot as plt
+from torch import Tensor
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -63,7 +64,7 @@ class CNNNet(nn.Module):
 
         logger.info(f'Device: {self.device.type}')
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
@@ -89,13 +90,13 @@ class CNNNet(nn.Module):
     def load_model(self, path: str = "result/cnn_net") -> None:
         self.load_state_dict(torch.load(path))
 
-    def show_plot(self):
+    def show_plot(self) -> None:
         plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.show()
 
-    def train_net(self):
+    def train_net(self: nn.Module) -> None:
         train_data_loader, val_data_loader = self._collect_loaders()
         for epoch in range(1, self.epoch + 1):
             training_loss = 0.0
