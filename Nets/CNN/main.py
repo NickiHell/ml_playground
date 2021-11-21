@@ -27,12 +27,12 @@ FILE_DIR = Path(__file__).resolve().parent
 class CNNNet(nn.Module):
     """Более крутая штука для классификации рыбок и котов"""
 
-    # TODO: Глупее со временем, починить
+    # TODO: Разобраться че за хуйня с обучением
 
     def __init__(self, epoch=10, batch_size=128, num_classes=2):
         super(CNNNet, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=(6, 6), stride=(4, 4), padding=2),
+            nn.Conv2d(3, 64, kernel_size=(6, 6), stride=(2, 2), padding=2),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=4, stride=2),
             nn.Conv2d(64, 192, kernel_size=(5, 5), padding=2),
@@ -50,13 +50,14 @@ class CNNNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
 
         self.classifier = nn.Sequential(
+            nn.ReLU(),
             nn.Dropout(),
             nn.Linear(256 * 6 * 6, 4096),
             nn.ReLU(),
             nn.Dropout(),
-            nn.Linear(4096, 1024),
+            nn.Linear(4096, 2048),
             nn.ReLU(),
-            nn.Linear(1024, num_classes)
+            nn.Linear(2048, num_classes)
         )
 
         self.batch_size = batch_size
@@ -80,9 +81,8 @@ class CNNNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def predict(self, path: str) -> bool:
+    def predict(self, path: str, who: str) -> bool:
         labels = ['cat', 'dog']
-        result = 'cat' if 'cat' in path else 'dog'
 
         img: Image = Image.open(path)
         img = self._image_transforms()(img).to(self.device)
@@ -93,9 +93,9 @@ class CNNNet(nn.Module):
         prediction = prediction.argmax()
 
         try:
-            assert labels[prediction] == result
+            assert labels[prediction] == who
         except AssertionError:
-            f'Prediction Error: {labels[prediction]} != {result}'
+            f'Prediction Error: {labels[prediction]} != {who}'
             return False
         return True
 
@@ -154,53 +154,6 @@ class CNNNet(nn.Module):
             logger.info(f'Epoch: {epoch}, Training Loss: {training_loss:.2f}, '
                         f'Validation Loss: {valid_loss:.2f}, accuracy = {num_correct / num_examples:.2f}')
 
-    def find_lr(self, init_value=1e-8, final_value=10.0):
-        train_loader, _ = self._collect_loaders()
-        number_in_epoch = len(train_loader) - 1
-        update_step = (final_value / init_value) ** (1 / number_in_epoch)
-        lr = init_value
-        self.optimizer.param_groups[0]["lr"] = lr
-        best_loss = 0.0
-        batch_num = 0
-        losses = []
-        log_lrs = []
-        for data in train_loader:
-            batch_num += 1
-            inputs, targets = data
-            inputs = inputs.to(self.device)
-            targets = targets.to(self.device)
-            self.optimizer.zero_grad()
-            outputs = self(inputs)
-            loss = self.loss_fn(outputs, targets)
-
-            # Crash out if loss explodes
-
-            if batch_num > 1 and loss > 4 * best_loss:
-                if (len(log_lrs) > 20):
-                    return log_lrs[10:-5], losses[10:-5]
-                else:
-                    return log_lrs, losses
-
-            # Record the best loss
-
-            if loss < best_loss or batch_num == 1:
-                best_loss = loss
-
-            # Store the values
-            losses.append(loss.item())
-            log_lrs.append((lr))
-
-            # Do the backward pass and optimize
-
-            loss.backward()
-            self.optimizer.step()
-
-            # Update the lr for the next step and store
-
-            lr *= update_step
-            self.optimizer.param_groups[0]["lr"] = lr
-        logger.warning(f'LR Found: {lr:2f}')
-
     def _collect_data(self) -> Tuple[ImageFolder, ...]:
         dataset = partial(ImageFolder)
         image_transforms = self._image_transforms()
@@ -226,17 +179,18 @@ class CNNNet(nn.Module):
 
 
 if __name__ == '__main__':
-    cnn_net = CNNNet(epoch=25, batch_size=64)
+    cnn_net = CNNNet(epoch=5, batch_size=128)
     # cnn_net.load_model()
     cnn_net.train_net()
-    cnn_net.find_lr()
     cnn_net.show_plot()
+    cnn_net.save_plot()
     cnn_net.save_model()
 
     cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
     dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    logger.info(
-        f'Cats errors: {len([cnn_net.predict(x) for x in cats if cnn_net.predict(x)]) * 100 / len(cats):.2f}')
-    logger.info(
-        f'Dogs errors: {len([cnn_net.predict(x) for x in dogs if cnn_net.predict(x)]) * 100 / len(dogs):.2f}')
+    succeed_cats = [cnn_net.predict(x, 'cat') for x in cats if cnn_net.predict(x, 'cat')]
+    succeed_dogs = [cnn_net.predict(x, 'dog') for x in dogs if cnn_net.predict(x, 'dog')]
+
+    logger.info(f'Succeed Cats: {len(succeed_cats)}/{len(cats)}')
+    logger.info(f'Succeed Dogs: {len(succeed_dogs)}/{len(dogs)}')

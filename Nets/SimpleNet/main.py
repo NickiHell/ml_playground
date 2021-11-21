@@ -55,9 +55,8 @@ class SimpleNet(nn.Module):
         x = self.fc4(x)
         return x
 
-    def predict(self, path: str) -> bool:
+    def predict(self, path: str, who: str) -> bool:
         labels = ['cat', 'dog']
-        result = 'cat' if 'cat' in path else 'dog'
 
         img: Image = Image.open(path)
         img = self._image_transforms()(img).to(self.device)
@@ -68,9 +67,9 @@ class SimpleNet(nn.Module):
         prediction = prediction.argmax()
 
         try:
-            assert labels[prediction] == result
+            assert labels[prediction] == who
         except AssertionError:
-            f'Prediction Error: {labels[prediction]} != {result}'
+            f'Prediction Error: {labels[prediction]} != {who}'
             return False
         return True
 
@@ -155,15 +154,16 @@ class SimpleNet(nn.Module):
 if __name__ == '__main__':
     simple_net = SimpleNet(epoch=50, batch_size=512)
     simple_net.load_model()
-    simple_net.train_net()
-    simple_net.show_plot()
-    simple_net.save_plot()
-    simple_net.save_model()
+    # simple_net.train_net()
+    # simple_net.show_plot()
+    # simple_net.save_plot()
+    # simple_net.save_model()
 
     cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
     dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    logger.info(
-        f'Cats errors: {len([simple_net.predict(x) for x in cats if simple_net.predict(x)]) * 100 / len(cats):.2f}')
-    logger.info(
-        f'Dogs errors: {len([simple_net.predict(x) for x in dogs if simple_net.predict(x)]) * 100 / len(dogs):.2f}')
+    succeed_cats = [simple_net.predict(x, 'cat') for x in cats if simple_net.predict(x, 'cat')]
+    succeed_dogs = [simple_net.predict(x, 'dog') for x in dogs if simple_net.predict(x, 'cat')]
+
+    logger.info(f'Succeed Cats: {len(succeed_cats)}/{len(cats)}')
+    logger.info(f'Succeed Dogs: {len(succeed_dogs)}/{len(dogs)}')
