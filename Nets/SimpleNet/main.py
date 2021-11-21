@@ -153,7 +153,7 @@ class SimpleNet(nn.Module):
 
 
 if __name__ == '__main__':
-    simple_net = SimpleNet(epoch=25, batch_size=512)
+    simple_net = SimpleNet(epoch=50, batch_size=512)
     # simple_net.load_model()
     simple_net.train_net()
     simple_net.show_plot()
@@ -163,5 +163,7 @@ if __name__ == '__main__':
     cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
     dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    logger.info(f'Cats errors: {len([simple_net.predict(x) for x in cats if simple_net.predict(x)]) / len(cats)}')
-    logger.info(f'Dogs errors: {len([simple_net.predict(x) for x in dogs if simple_net.predict(x)]) / len(dogs)}')
+    logger.info(
+        f'Cats errors: {len([simple_net.predict(x) for x in cats if simple_net.predict(x)]) * 100 / len(cats):.2f}')
+    logger.info(
+        f'Dogs errors: {len([simple_net.predict(x) for x in dogs if simple_net.predict(x)]) * 100 / len(dogs):.2f}')

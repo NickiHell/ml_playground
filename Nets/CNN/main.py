@@ -70,7 +70,6 @@ class CNNNet(nn.Module):
         self.to(self.device)
 
         self.accuracy = []
-        self.plot = plt.plot()
 
         logger.info(f'Device: {self.device.type}')
 
@@ -107,10 +106,10 @@ class CNNNet(nn.Module):
         self.load_state_dict(torch.load(path))
 
     def show_plot(self) -> None:
-        self.plot = plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
-        self.plot.xlabel('Epoch')
-        self.plot.ylabel('Accuracy')
-        self.plot.show()
+        plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.show()
 
     def save_plot(self) -> None:
         now = datetime.now(tz=pytz.utc)
@@ -237,5 +236,7 @@ if __name__ == '__main__':
     cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
     dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    logger.info(f'Cats errors: {len([cnn_net.predict(x) for x in cats if cnn_net.predict(x)]) / len(cats)}')
-    logger.info(f'Dogs errors: {len([cnn_net.predict(x) for x in dogs if cnn_net.predict(x)]) / len(dogs)}')
+    logger.info(
+        f'Cats errors: {len([cnn_net.predict(x) for x in cats if cnn_net.predict(x)]) * 100 / len(cats):.2f}')
+    logger.info(
+        f'Dogs errors: {len([cnn_net.predict(x) for x in dogs if cnn_net.predict(x)]) * 100 / len(dogs):.2f}')
