@@ -24,7 +24,7 @@ random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
 # Root directory for dataset
-dataroot = f'{BASE_DIR}/Datasets/Classification/CatsDogs/training'
+dataroot = f'{BASE_DIR}/Datasets/ScarletChoir'
 
 # Number of workers for dataloader
 workers = 16
@@ -49,7 +49,7 @@ ngf = 64
 ndf = 64
 
 # Number of training epochs
-num_epochs = 100
+num_epochs = 250
 
 # Learning rate for optimizers
 lr = 0.0002
