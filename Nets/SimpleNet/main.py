@@ -154,7 +154,7 @@ class SimpleNet(nn.Module):
 
 if __name__ == '__main__':
     simple_net = SimpleNet(epoch=50, batch_size=512)
-    # simple_net.load_model()
+    simple_net.load_model()
     simple_net.train_net()
     simple_net.show_plot()
     simple_net.save_plot()
