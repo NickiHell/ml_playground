@@ -14,6 +14,7 @@ pyglet = "*"
 torchvision = "*"
 torchaudio = "*"
 torch = "*"
+pytz = "*"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"

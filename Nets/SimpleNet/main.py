@@ -1,7 +1,10 @@
+import glob
+from datetime import datetime
 from functools import partial
-from os import walk
+from pathlib import Path
 from typing import Tuple
 
+import pytz
 import torch
 import torch.nn as nn
 from PIL import Image
@@ -16,6 +19,9 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FILE_DIR = Path(__file__).resolve().parent
+
 
 class SimpleNet(nn.Module):
     """Простая нейронка которая отличает кошек от собак"""
@@ -29,9 +35,8 @@ class SimpleNet(nn.Module):
 
         self.batch_size = batch_size
         self.epoch = epoch
-        self.train_data_path = 'dataset/train/'
-        self.val_data_path = 'dataset/val/'
-        self.test_data_path = 'dataset/test/'
+        self.train_data_path = f'{BASE_DIR}/Datasets/Classification/CatsDogs/training/'
+        self.val_data_path = f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/'
 
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.optimizer = Adam(self.parameters(), lr=0.001)
@@ -50,11 +55,11 @@ class SimpleNet(nn.Module):
         x = self.fc4(x)
         return x
 
-    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> str:
-        labels = ['cat', 'fish']
+    def predict(self, path: str) -> bool:
+        labels = ['cat', 'dog']
+        result = 'cat' if 'cat' in path else 'dog'
 
         img: Image = Image.open(path)
-        # print(img.fp.name)
         img = self._image_transforms()(img).to(self.device)
         img = torch.unsqueeze(img, 0)
 
@@ -62,32 +67,38 @@ class SimpleNet(nn.Module):
         prediction = softmax(self(img), dim=1)
         prediction = prediction.argmax()
 
-        return labels[prediction]
+        try:
+            assert labels[prediction] == result
+        except AssertionError:
+            f'Prediction Error: {labels[prediction]} != {result}'
+            return False
+        return True
 
-        # if labels[prediction] in path.split('/'):
-        #     logger.success(f'Prediction of {path.split("/")[-1]} is {labels[prediction]}')
-        # else:
-        #     logger.error(f'Prediction of {path.split("/")[-1]} is not {labels[prediction]}')
-
-    def save_model(self, path: str = "result/simple_net") -> None:
+    def save_model(self, path: str = f'{FILE_DIR}/result/simple_net') -> None:
         torch.save(self.state_dict(), path)
 
-    def load_model(self, path: str = "result/simple_net") -> None:
+    def load_model(self, path: str = f'{FILE_DIR}/result/simple_net') -> None:
         self.load_state_dict(torch.load(path))
 
-    def show_plot(self):
+    def show_plot(self) -> None:
         plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
         plt.show()
 
+    def save_plot(self) -> None:
+        now = datetime.now(tz=pytz.utc)
+        plt.savefig(
+            f'{FILE_DIR}/plots/[{now.strftime("%H:%M:%S %d-%m-%Y")}] '
+            f'Epochs:{self.epoch} Batch_size:{self.batch_size}.png')
+
     def train_net(self) -> None:
-        train_data_loader, val_data_loader, _ = self._collect_loaders()
+        training_data_loader, validation_data_loader = self._collect_loaders()
         for epoch in range(1, self.epoch + 1):
             training_loss = 0.0
             valid_loss = 0.0
             self.train()
-            for batch in train_data_loader:
+            for batch in training_data_loader:
                 self.optimizer.zero_grad()
                 inputs, targets = batch
                 inputs = inputs.to(self.device)
@@ -97,12 +108,12 @@ class SimpleNet(nn.Module):
                 loss.backward()
                 self.optimizer.step()
                 training_loss += loss.data.item() * inputs.size(0)
-            training_loss /= len(train_data_loader.dataset)
+            training_loss /= len(training_data_loader.dataset)
 
             self.eval()
             num_correct = 0
             num_examples = 0
-            for batch in val_data_loader:
+            for batch in validation_data_loader:
                 inputs, targets = batch
                 inputs = inputs.to(self.device)
                 output = self(inputs)
@@ -112,7 +123,7 @@ class SimpleNet(nn.Module):
                 correct = torch.eq(torch.max(softmax(output, dim=1), dim=1)[1], targets)
                 num_correct += torch.sum(correct).item()
                 num_examples += correct.shape[0]
-            valid_loss /= len(val_data_loader.dataset)
+            valid_loss /= len(validation_data_loader.dataset)
             self.accuracy.append(num_correct / num_examples)
             logger.info(f'Epoch: {epoch}, Training Loss: {training_loss:.2f}, '
                         f'Validation Loss: {valid_loss:.2f}, accuracy = {num_correct / num_examples:.2f}')
@@ -120,18 +131,16 @@ class SimpleNet(nn.Module):
     def _collect_data(self) -> Tuple[ImageFolder, ...]:
         dataset = partial(ImageFolder)
         image_transforms = self._image_transforms()
-        train_data = dataset(root=self.train_data_path, transform=image_transforms)
-        val_data = dataset(root=self.val_data_path, transform=image_transforms)
-        test_data = dataset(root=self.test_data_path, transform=image_transforms)
-        return train_data, val_data, test_data
+        training_data = dataset(root=self.train_data_path, transform=image_transforms)
+        validation_data = dataset(root=self.val_data_path, transform=image_transforms)
+        return training_data, validation_data
 
     def _collect_loaders(self) -> Tuple[DataLoader, ...]:
         loader = partial(DataLoader)
         data: Tuple[ImageFolder, ...] = self._collect_data()
-        train_data_loader = loader(data[0], batch_size=self.batch_size)
-        val_data_loader = loader(data[1], batch_size=self.batch_size)
-        test_data_loader = loader(data[2], batch_size=self.batch_size)
-        return train_data_loader, val_data_loader, test_data_loader
+        training_data_loader = loader(data[0], batch_size=self.batch_size)
+        validation_data_loader = loader(data[1], batch_size=self.batch_size)
+        return training_data_loader, validation_data_loader
 
     @staticmethod
     def _image_transforms() -> Compose:
@@ -144,20 +153,15 @@ class SimpleNet(nn.Module):
 
 
 if __name__ == '__main__':
-    simple_net = SimpleNet()
-    simple_net.load_model()
-    # simple_net.train_net()
-    # simple_net.show_plot()
-    # simple_net.predict()
-    # simple_net.save_model()
+    simple_net = SimpleNet(epoch=25, batch_size=512)
+    # simple_net.load_model()
+    simple_net.train_net()
+    simple_net.show_plot()
+    simple_net.save_plot()
+    simple_net.save_model()
 
-    all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
-    fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
-    cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
-    fish = [''.join(('dataset/val/fish/', x)) for x in fish]
-    cats = [''.join(('dataset/val/cat/', x)) for x in cats]
+    cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
+    dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    cat_errors = len([simple_net.predict(x) for x in cats if simple_net.predict(x) == 'fish'])
-    fish_errors = len([simple_net.predict(x) for x in fish if simple_net.predict(x) == 'cat'])
-
-    logger.warning(f'Cat errors: {cat_errors}/{len(cats)}, Fish errors: {fish_errors}/{len(fish)}')
+    logger.info(f'Cats errors: {len([simple_net.predict(x) for x in cats if simple_net.predict(x)]) / len(cats)}')
+    logger.info(f'Dogs errors: {len([simple_net.predict(x) for x in dogs if simple_net.predict(x)]) / len(dogs)}')

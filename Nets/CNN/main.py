@@ -1,7 +1,10 @@
+import glob
+from datetime import datetime
 from functools import partial
-from os import walk
+from pathlib import Path
 from typing import Tuple
 
+import pytz
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,15 +20,21 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FILE_DIR = Path(__file__).resolve().parent
+
 
 class CNNNet(nn.Module):
+    """Более крутая штука для классификации рыбок и котов"""
 
-    def __init__(self, epoch=25, batch_size=64, num_classes=2):
+    # TODO: Глупее со временем, починить
+
+    def __init__(self, epoch=10, batch_size=128, num_classes=2):
         super(CNNNet, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=(11, 11), stride=(4, 4), padding=2),
+            nn.Conv2d(3, 64, kernel_size=(6, 6), stride=(4, 4), padding=2),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.MaxPool2d(kernel_size=4, stride=2),
             nn.Conv2d(64, 192, kernel_size=(5, 5), padding=2),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2),
@@ -45,15 +54,15 @@ class CNNNet(nn.Module):
             nn.Linear(256 * 6 * 6, 4096),
             nn.ReLU(),
             nn.Dropout(),
-            nn.Linear(4096, 4096),
+            nn.Linear(4096, 1024),
             nn.ReLU(),
-            nn.Linear(4096, num_classes)
+            nn.Linear(1024, num_classes)
         )
 
         self.batch_size = batch_size
         self.epoch = epoch
-        self.train_data_path = 'dataset/train/'
-        self.val_data_path = 'dataset/val/'
+        self.train_data_path = f'{BASE_DIR}/Datasets/Classification/CatsDogs/training/'
+        self.val_data_path = f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/'
 
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.optimizer = Adam(self.parameters(), lr=0.001)
@@ -61,6 +70,7 @@ class CNNNet(nn.Module):
         self.to(self.device)
 
         self.accuracy = []
+        self.plot = plt.plot()
 
         logger.info(f'Device: {self.device.type}')
 
@@ -71,10 +81,11 @@ class CNNNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def predict(self, path: str = 'dataset/val/fish/10.18.05_Manistee_Lake_Coho_004_small.jpg') -> str:
-        labels = ['cat', 'fish']
+    def predict(self, path: str) -> bool:
+        labels = ['cat', 'dog']
+        result = 'cat' if 'cat' in path else 'dog'
 
-        img = Image.open(path)
+        img: Image = Image.open(path)
         img = self._image_transforms()(img).to(self.device)
         img = torch.unsqueeze(img, 0)
 
@@ -82,27 +93,38 @@ class CNNNet(nn.Module):
         prediction = F.softmax(self(img), dim=1)
         prediction = prediction.argmax()
 
-        return labels[prediction]
+        try:
+            assert labels[prediction] == result
+        except AssertionError:
+            f'Prediction Error: {labels[prediction]} != {result}'
+            return False
+        return True
 
-    def save_model(self, path: str = "result/cnn_net") -> None:
+    def save_model(self, path: str = f'{FILE_DIR}/result/cnn_net') -> None:
         torch.save(self.state_dict(), path)
 
-    def load_model(self, path: str = "result/cnn_net") -> None:
+    def load_model(self, path: str = f'{FILE_DIR}/result/cnn_net') -> None:
         self.load_state_dict(torch.load(path))
 
     def show_plot(self) -> None:
-        plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.show()
+        self.plot = plt.plot([x for x in range(1, self.epoch + 1)], [x for x in self.accuracy], 'r--')
+        self.plot.xlabel('Epoch')
+        self.plot.ylabel('Accuracy')
+        self.plot.show()
 
-    def train_net(self: nn.Module) -> None:
-        train_data_loader, val_data_loader = self._collect_loaders()
+    def save_plot(self) -> None:
+        now = datetime.now(tz=pytz.utc)
+        plt.savefig(
+            f'{FILE_DIR}/plots/[{now.strftime("%H:%M:%S %d-%m-%Y")}] '
+            f'Epochs:{self.epoch} Batch_size:{self.batch_size}.png')
+
+    def train_net(self):
+        training_loader, validation_loader = self._collect_loaders()
         for epoch in range(1, self.epoch + 1):
             training_loss = 0.0
             valid_loss = 0.0
             self.train()
-            for batch in train_data_loader:
+            for batch in training_loader:
                 self.optimizer.zero_grad()
                 inputs, targets = batch
                 inputs = inputs.to(self.device)
@@ -112,12 +134,12 @@ class CNNNet(nn.Module):
                 loss.backward()
                 self.optimizer.step()
                 training_loss += loss.data.item() * inputs.size(0)
-            training_loss /= len(train_data_loader.dataset)
+            training_loss /= len(training_loader.dataset)
 
             self.eval()
             num_correct = 0
             num_examples = 0
-            for batch in val_data_loader:
+            for batch in validation_loader:
                 inputs, targets = batch
                 inputs = inputs.to(self.device)
                 output = self(inputs)
@@ -128,10 +150,57 @@ class CNNNet(nn.Module):
                                    targets)
                 num_correct += torch.sum(correct).item()
                 num_examples += correct.shape[0]
-            valid_loss /= len(val_data_loader.dataset)
+            valid_loss /= len(validation_loader.dataset)
             self.accuracy.append(num_correct / num_examples)
             logger.info(f'Epoch: {epoch}, Training Loss: {training_loss:.2f}, '
                         f'Validation Loss: {valid_loss:.2f}, accuracy = {num_correct / num_examples:.2f}')
+
+    def find_lr(self, init_value=1e-8, final_value=10.0):
+        train_loader, _ = self._collect_loaders()
+        number_in_epoch = len(train_loader) - 1
+        update_step = (final_value / init_value) ** (1 / number_in_epoch)
+        lr = init_value
+        self.optimizer.param_groups[0]["lr"] = lr
+        best_loss = 0.0
+        batch_num = 0
+        losses = []
+        log_lrs = []
+        for data in train_loader:
+            batch_num += 1
+            inputs, targets = data
+            inputs = inputs.to(self.device)
+            targets = targets.to(self.device)
+            self.optimizer.zero_grad()
+            outputs = self(inputs)
+            loss = self.loss_fn(outputs, targets)
+
+            # Crash out if loss explodes
+
+            if batch_num > 1 and loss > 4 * best_loss:
+                if (len(log_lrs) > 20):
+                    return log_lrs[10:-5], losses[10:-5]
+                else:
+                    return log_lrs, losses
+
+            # Record the best loss
+
+            if loss < best_loss or batch_num == 1:
+                best_loss = loss
+
+            # Store the values
+            losses.append(loss.item())
+            log_lrs.append((lr))
+
+            # Do the backward pass and optimize
+
+            loss.backward()
+            self.optimizer.step()
+
+            # Update the lr for the next step and store
+
+            lr *= update_step
+            self.optimizer.param_groups[0]["lr"] = lr
+        logger.warning(f'LR Found: {lr:2f}')
 
     def _collect_data(self) -> Tuple[ImageFolder, ...]:
         dataset = partial(ImageFolder)
@@ -158,20 +227,15 @@ class CNNNet(nn.Module):
 
 
 if __name__ == '__main__':
-    cnn_net = CNNNet()
+    cnn_net = CNNNet(epoch=25, batch_size=64)
     # cnn_net.load_model()
     cnn_net.train_net()
-    # cnn_net.show_plot()
-    # cnn_net.predict()
-    # cnn_net.save_model()
+    cnn_net.find_lr()
+    cnn_net.show_plot()
+    cnn_net.save_model()
 
-    all = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')]
-    fish = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][1][2]
-    cats = [(dirpath, dirnames, filenames) for dirpath, dirnames, filenames in walk('dataset/val')][2][2]
-    fish = [''.join(('dataset/val/fish/', x)) for x in fish]
-    cats = [''.join(('dataset/val/cat/', x)) for x in cats]
+    cats = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/cats/*')
+    dogs = glob.glob(f'{BASE_DIR}/Datasets/Classification/CatsDogs/validation/dogs/*')
 
-    cat_errors = len([cnn_net.predict(x) for x in cats if cnn_net.predict(x) == 'fish'])
-    fish_errors = len([cnn_net.predict(x) for x in fish if cnn_net.predict(x) == 'cat'])
-
-    logger.warning(f'Cat errors: {cat_errors}/{len(cats)}, Fish errors: {fish_errors}/{len(fish)}')
+    logger.info(f'Cats errors: {len([cnn_net.predict(x) for x in cats if cnn_net.predict(x)]) / len(cats)}')
+    logger.info(f'Dogs errors: {len([cnn_net.predict(x) for x in dogs if cnn_net.predict(x)]) / len(dogs)}')
