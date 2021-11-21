@@ -49,7 +49,7 @@ ngf = 64
 ndf = 64
 
 # Number of training epochs
-num_epochs = 25
+num_epochs = 100
 
 # Learning rate for optimizers
 lr = 0.0002
@@ -169,8 +169,6 @@ if __name__ == '__main__':
     #  to mean=0, stdev=0.02.
     netG.apply(weights_init)
 
-    # Print the model
-    print(netG)
 
     # Create the Discriminator
     netD = Discriminator(ngpu).to(device)
@@ -183,8 +181,6 @@ if __name__ == '__main__':
     #  to mean=0, stdev=0.2.
     netD.apply(weights_init)
 
-    # Print the model
-    print(netD)
 
     # Initialize BCELoss function
     criterion = nn.BCELoss()
