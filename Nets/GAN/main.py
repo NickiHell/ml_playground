@@ -3,7 +3,6 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.utils.data
 import torchvision.datasets as dset
@@ -268,15 +267,4 @@ if __name__ == '__main__':
                 img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
 
             iters += 1
-        transforms.ToPILImage()(vutils.make_grid(fake, padding=2, normalize=True)).save(
-            f'drive/MyDrive/Results/{str(uuid4())}.jpg')
-        transforms.ToPILImage()(img_list[-1]).save(f'drive/MyDrive/Results/{str(uuid4())}.jpg')
-
-    # transforms.ToPILImage()(netG(fixed_noise)[1]).save(f'drive/MyDrive/Results/{str(uuid4())}.jpg')
-    # transforms.ToPILImage()(img_list[-1]).save(f'drive/MyDrive/Results/{str(uuid4())}.jpg')
-    # Plot the fake images from the last epoch
-    plt.subplot(1, 2, 2)
-    plt.axis("off")
-    plt.title("Fake Images")
-    plt.imshow(transforms.ToPILImage()(netG(fixed_noise)[1]))
-    plt.show()
+        transforms.ToPILImage()(fake[0]).resize(size=(512, 512)).save(f'{FILE_DIR}/out/{str(uuid4())}.png')
