@@ -1,224 +1,122 @@
 import os
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
+import pytz
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torchvision.transforms as transforms
 from loguru import logger
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
+from torchvision import datasets
 from torchvision.utils import save_image
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FILE_DIR = Path(__file__).resolve().parent
 
-torch.autograd.set_detect_anomaly(False)
-torch.autograd.profiler.profile(False)
-torch.autograd.profiler.emit_nvtx(False)
-torch.backends.cudnn.benchmark = True
+# Hyperparameters etc.
+device = "cuda" if torch.cuda.is_available() else "cpu"
+lr = 3e-4
+z_dim = 64
+image_dim = 28 * 28 * 1  # 784
+batch_size = 24
+num_epochs = 150
 
 os.makedirs("images", exist_ok=True)
 
 
-class opt:
-    pass
-
-
-opt.n_epochs = 10000
-opt.batch_size = 4
-opt.lr = 0.0002
-opt.b1 = 0.5
-opt.b2 = 0.999
-opt.n_cpu = 8
-opt.latent_dim = 100
-opt.img_size = 32
-opt.channels = 3
-opt.sample_interval = 1000
-opt.img1 = None
-opt.img2 = None
-print(opt)
-
-img_shape = (opt.channels, opt.img_size, opt.img_size)
-
-cuda = True if torch.cuda.is_available() else False
-
-
-def weights_init_normal(m):
-    classname = m.__class__.__name__
-    if classname.find("Linear") != -1:
-        torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
-    elif classname.find("BatchNorm") != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-        torch.nn.init.constant_(m.bias.data, 0.0)
-
-
-class CoupledGenerators(nn.Module):
+class Discriminator(nn.Module):
     def __init__(self):
-        super(CoupledGenerators, self).__init__()
-
-        self.init_size = opt.img_size // 4
-        self.fc = nn.Sequential(nn.Linear(opt.latent_dim, 128 * self.init_size ** 2))
-
-        self.shared_conv = nn.Sequential(
-            nn.BatchNorm2d(128),
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(128, 128, 3, stride=1, padding=1),
-            nn.BatchNorm2d(128, 0.8),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Upsample(scale_factor=2),
-        )
-        self.G1 = nn.Sequential(
-            nn.Conv2d(128, 64, 3, stride=1, padding=1),
-            nn.BatchNorm2d(64, 0.8),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, opt.channels, 3, stride=1, padding=1),
-            nn.Tanh(),
-        )
-        self.G2 = nn.Sequential(
-            nn.Conv2d(128, 64, 3, stride=1, padding=1),
-            nn.BatchNorm2d(64, 0.8),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, opt.channels, 3, stride=1, padding=1),
-            nn.Tanh(),
+        super().__init__()
+        self.disc = nn.Sequential(
+            nn.Linear(image_dim, 128),
+            nn.LeakyReLU(0.01),
+            nn.Linear(128, 1),
+            nn.Sigmoid(),
         )
 
-    def forward(self, noise):
-        out = self.fc(noise)
-        out = out.view(out.shape[0], 128, self.init_size, self.init_size)
-        img_emb = self.shared_conv(out)
-        img1 = self.G1(img_emb)
-        img2 = self.G2(img_emb)
-        opt.img1, opt.img2 = img1, img2
-        return img1, img2
+    def forward(self, x):
+        return self.disc(x)
 
 
-class CoupledDiscriminators(nn.Module):
+class Generator(nn.Module):
     def __init__(self):
-        super(CoupledDiscriminators, self).__init__()
-
-        def discriminator_block(in_filters, out_filters, bn=True):
-            block = [nn.Conv2d(in_filters, out_filters, 3, 2, 1)]
-            if bn:
-                block.append(nn.BatchNorm2d(out_filters, 0.8))
-            block.extend([nn.LeakyReLU(0.2, inplace=True), nn.Dropout2d(0.25)])
-            return block
-
-        self.shared_conv = nn.Sequential(
-            *discriminator_block(opt.channels, 16, bn=False),
-            *discriminator_block(16, 32),
-            *discriminator_block(32, 64),
-            *discriminator_block(64, 128),
+        super().__init__()
+        self.gen = nn.Sequential(
+            nn.Linear(64, 256),
+            nn.LeakyReLU(0.01),
+            nn.Linear(256, image_dim),
+            nn.Tanh(),  # normalize inputs to [-1, 1] so make outputs [-1, 1]
         )
-        # The height and width of downsampled image
-        ds_size = opt.img_size // 2 ** 4
-        self.D1 = nn.Linear(128 * ds_size ** 2, 1)
-        self.D2 = nn.Linear(128 * ds_size ** 2, 1)
 
-    def forward(self, img1, img2):
-        # Determine validity of first image
-        out = self.shared_conv(img1)
-        out = out.view(out.shape[0], -1)
-        validity1 = self.D1(out)
-        # Determine validity of second image
-        out = self.shared_conv(img2)
-        out = out.view(out.shape[0], -1)
-        validity2 = self.D2(out)
-
-        return validity1, validity2
+    def forward(self, x):
+        return self.gen(x)
 
 
-# Loss function
-adversarial_loss = torch.nn.MSELoss()
+disc = Discriminator().to(device)
+gen = Generator().to(device)
+fixed_noise = torch.randn((batch_size, z_dim)).to(device)
 
-# Initialize models
-coupled_generators = CoupledGenerators()
-coupled_discriminators = CoupledDiscriminators()
+# trm = transforms.Compose([
+#     transforms.Resize((512, 512)),
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.5,), (0.5,))
+# ])
+#
+# data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
+# loader = DataLoader(data, batch_size=batch_size)
+#
+transforms = transforms.Compose(
+    [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,)), ]
+)
 
-if cuda:
-    coupled_generators.cuda()
-    coupled_discriminators.cuda()
+dataset = datasets.MNIST(root="dataset/", transform=transforms, download=True)
+loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-# Initialize weights
-coupled_generators.apply(weights_init_normal)
-coupled_discriminators.apply(weights_init_normal)
+opt_disc = optim.Adam(disc.parameters(), lr=lr)
+opt_gen = optim.Adam(gen.parameters(), lr=lr)
+criterion = nn.BCELoss()
+step = 0
 
-image_transforms = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
-train_data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=image_transforms)
-dataloader1 = DataLoader(train_data, batch_size=opt.batch_size)
-dataloader2 = DataLoader(train_data, batch_size=opt.batch_size)
+for epoch in range(num_epochs):
+    for batch_idx, (real, _) in enumerate(loader):
+        real = real.view(-1, 784).to(device)
+        batch_size = real.shape[0]
 
-# Optimizers
-optimizer_G = torch.optim.Adam(coupled_generators.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
-optimizer_D = torch.optim.Adam(coupled_discriminators.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+        ### Train Discriminator: max log(D(x)) + log(1 - D(G(z)))
+        noise = torch.randn(batch_size, z_dim).to(device)
+        fake = gen(noise)
+        disc_real = disc(real).view(-1)
+        lossD_real = criterion(disc_real, torch.ones_like(disc_real))
+        disc_fake = disc(fake).view(-1)
+        lossD_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
+        lossD = (lossD_real + lossD_fake) / 2
+        disc.zero_grad()
+        lossD.backward(retain_graph=True)
+        opt_disc.step()
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+        ### Train Generator: min log(1 - D(G(z))) <-> max log(D(G(z))
+        # where the second option of maximizing doesn't suffer from
+        # saturating gradients
+        output = disc(fake).view(-1)
+        lossG = criterion(output, torch.ones_like(output))
+        gen.zero_grad()
+        lossG.backward()
+        opt_gen.step()
 
-# ----------
-#  Training
-# ----------
+        logger.info(f"Epoch [{epoch}/{num_epochs}]| "
+                    f"Batch {batch_idx}/{len(loader)}| "
+                    f"Loss Descriminator: {lossD:.4f}| "
+                    f"Loss Generator: {lossG:.4f}")
 
-for epoch in range(opt.n_epochs):
-    for i, ((imgs1, _), (imgs2, _)) in enumerate(zip(dataloader1, dataloader2)):
-
-        batch_size = imgs1.shape[0]
-
-        # Adversarial ground truths
-        valid = Variable(Tensor(batch_size, 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(batch_size, 1).fill_(0.0), requires_grad=False)
-
-        # Configure input
-        imgs1 = Variable(imgs1.type(Tensor).expand(imgs1.size(0), 3, opt.img_size, opt.img_size))
-        imgs2 = Variable(imgs2.type(Tensor))
-
-        # ------------------
-        #  Train Generators
-        # ------------------
-
-        optimizer_G.zero_grad()
-
-        # Sample noise as generator input
-        z = Variable(Tensor(np.random.normal(0, 1, (batch_size, opt.latent_dim))))
-
-        # Generate a batch of images
-        gen_imgs1, gen_imgs2 = coupled_generators(z)
-        # Determine validity of generated images
-        validity1, validity2 = coupled_discriminators(gen_imgs1, gen_imgs2)
-
-        g_loss = (adversarial_loss(validity1, valid) + adversarial_loss(validity2, valid)) / 2
-
-        g_loss.backward()
-        optimizer_G.step()
-
-        # ----------------------
-        #  Train Discriminators
-        # ----------------------
-
-        optimizer_D.zero_grad()
-
-        # Determine validity of real and generated images
-        validity1_real, validity2_real = coupled_discriminators(imgs1, imgs2)
-        validity1_fake, validity2_fake = coupled_discriminators(gen_imgs1.detach(), gen_imgs2.detach())
-
-        d_loss = (
-                     adversarial_loss(validity1_real, valid)
-                     + adversarial_loss(validity1_fake, fake)
-                     + adversarial_loss(validity2_real, valid)
-                     + adversarial_loss(validity2_fake, fake)
-                 ) / 4
-
-        d_loss.backward()
-        optimizer_D.step()
-        logger.info(f'[Epoch {epoch}/{opt.n_epochs}] [Batch {i}/{len(dataloader1)}] '
-                    f'[D loss: {d_loss.item()}] [G loss: {g_loss.item()}]')
-
-        batches_done = epoch * len(dataloader1) + i
-        if batches_done % opt.sample_interval == 0:
-            gen_imgs = torch.cat((gen_imgs1.data, gen_imgs2.data), 0)
-            save_image(gen_imgs, "images/%d.png" % batches_done, nrow=8, normalize=True)
+        if batch_idx == 0:
+            with torch.no_grad():
+                now = datetime.now(tz=pytz.timezone('Asia/Vladivostok'))
+                fake = gen(fixed_noise).reshape(-1, 1, 28, 28)
+                data = real.reshape(-1, 1, 28, 28)
+                # img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
+                # img_grid_real = torchvision.utils.make_grid(data, normalize=True)
+                # save_image(real, f"images/true_{str(uuid4())}.png", normalize=True)
+                save_image(fake, f'images/fake_{now.strftime("%H:%M %d-%m-%Y")}.png', normalize=True)
+                step += 1
