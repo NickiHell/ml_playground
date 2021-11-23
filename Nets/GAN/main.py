@@ -15,14 +15,14 @@ from torchvision.utils import save_image
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FILE_DIR = Path(__file__).resolve().parent
 
-# Hyperparameters etc.
 device = "cuda" if torch.cuda.is_available() else "cpu"
 lr = 3e-4
 z_dim = 64
 batch_size = 24
 num_epochs = 500
 
-os.makedirs("images", exist_ok=True)
+os.makedirs("fake", exist_ok=True)
+os.makedirs("real", exist_ok=True)
 
 
 class Discriminator(nn.Module):
@@ -30,11 +30,17 @@ class Discriminator(nn.Module):
         super().__init__()
         self.disc = nn.Sequential(
             nn.AdaptiveAvgPool1d(4096),
-            nn.Linear(4096, 2048),
-            nn.LeakyReLU(0.01),
-            nn.Linear(2048, 1),
+            nn.Linear(4096, 1024),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
             nn.Sigmoid(),
-            nn.Tanh()
         )
 
     def forward(self, x):
@@ -45,12 +51,14 @@ class Generator(nn.Module):
     def __init__(self):
         super().__init__()
         self.gen = nn.Sequential(
-            nn.Linear(64, 1024),
-            nn.LeakyReLU(0.01),
-            nn.Linear(1024, 512),
-            nn.LeakyReLU(0.01),
-            nn.Linear(512, 784),
-            nn.Tanh(),  # normalize inputs to [-1, 1] so make outputs [-1, 1]
+            nn.Linear(64, 256),
+            nn.ReLU(),
+            nn.Linear(256, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 784),
+            nn.Tanh(),
         )
 
     def forward(self, x):
@@ -70,15 +78,16 @@ trm = transforms.Compose([
 data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
 loader = DataLoader(data, batch_size=batch_size)
 
-opt_disc = optim.Adam(disc.parameters(), lr=lr)
-opt_gen = optim.Adam(gen.parameters(), lr=lr)
+opt_disc = optim.AdamW(disc.parameters(), lr=lr)
+opt_gen = optim.AdamW(gen.parameters(), lr=lr)
 criterion = nn.BCELoss()
 step = 0
 
 for epoch in range(num_epochs):
     for batch_idx, (real, _) in enumerate(loader):
-        ssize = real.size(dim=0) * real.size(dim=1) * real.size(dim=2) * real.size(dim=3)
-        real = real.view(-1, ssize).to(device)
+        now = datetime.now(pytz.timezone('Asia/Vladivostok'))
+        real_data_size = real.size(dim=0) * real.size(dim=1) * real.size(dim=2) * real.size(dim=3)
+        real = real.view(-1, real_data_size).to(device)
         batch_size = real.shape[0]
 
         ### Train Discriminator: max log(D(x)) + log(1 - D(G(z)))
@@ -109,11 +118,10 @@ for epoch in range(num_epochs):
 
         if batch_idx == 0:
             with torch.no_grad():
-                now = datetime.now(tz=pytz.timezone('Asia/Vladivostok'))
                 fake = gen(fixed_noise).reshape(-1, 1, 28, 28)
                 data = real.reshape(-1, 1, 64, 64)
                 # img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
                 # img_grid_real = torchvision.utils.make_grid(data, normalize=True)
-                # save_image(real, f'images/real_{now.strftime("%H:%M %d-%m-%Y")}.png')
-                save_image(fake, f'images/fake_{now.strftime("%H:%M %d-%m-%Y")}.png')
+                save_image(real, f'real/real {now.strftime("%H:%M %d-%m-%Y")}.png')
+                save_image(fake, f'fake/fake {now.strftime("%H:%M %d-%m-%Y")}.png')
                 step += 1
