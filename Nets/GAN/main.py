@@ -39,7 +39,7 @@ class Discriminator(nn.Module):
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(256, 1),
+            nn.Linear(256, 256),
             nn.Sigmoid(),
         )
 
@@ -67,7 +67,7 @@ class Generator(nn.Module):
 
 disc = Discriminator().to(device)
 gen = Generator().to(device)
-fixed_noise = torch.randn((batch_size, z_dim)).to(device)
+fixed_noise = torch.randn((256, z_dim)).to(device)
 
 trm = transforms.Compose([
     transforms.Resize((64, 64)),
@@ -75,15 +75,14 @@ trm = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
-loader = DataLoader(data, batch_size=batch_size)
-
-opt_disc = optim.AdamW(disc.parameters(), lr=lr)
-opt_gen = optim.AdamW(gen.parameters(), lr=lr)
+opt_disc = optim.Adam(disc.parameters(), lr=lr)
+opt_gen = optim.Adam(gen.parameters(), lr=lr)
 criterion = nn.BCELoss()
 step = 0
 
 for epoch in range(num_epochs):
+    data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
+    loader = DataLoader(data, batch_size=batch_size, shuffle=True)
     for batch_idx, (real, _) in enumerate(loader):
         now = datetime.now(pytz.timezone('Asia/Vladivostok'))
         real_data_size = real.size(dim=0) * real.size(dim=1) * real.size(dim=2) * real.size(dim=3)
@@ -118,10 +117,10 @@ for epoch in range(num_epochs):
 
         if batch_idx == 0:
             with torch.no_grad():
-                fake = gen(fixed_noise).reshape(-1, 1, 28, 28)
+                fake = gen(fixed_noise).reshape(-1, 1, 64, 64)
                 data = real.reshape(-1, 1, 64, 64)
                 # img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
                 # img_grid_real = torchvision.utils.make_grid(data, normalize=True)
-                save_image(real, f'real/real {now.strftime("%H:%M %d-%m-%Y")}.png')
+                save_image(data, f'real/real {now.strftime("%H:%M %d-%m-%Y")}.png')
                 save_image(fake, f'fake/fake {now.strftime("%H:%M %d-%m-%Y")}.png')
                 step += 1
