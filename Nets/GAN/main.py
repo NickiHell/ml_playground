@@ -9,7 +9,7 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 from loguru import logger
 from torch.utils.data import DataLoader
-from torchvision import datasets
+from torchvision.datasets import ImageFolder
 from torchvision.utils import save_image
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -19,9 +19,8 @@ FILE_DIR = Path(__file__).resolve().parent
 device = "cuda" if torch.cuda.is_available() else "cpu"
 lr = 3e-4
 z_dim = 64
-image_dim = 28 * 28 * 1  # 784
 batch_size = 24
-num_epochs = 150
+num_epochs = 500
 
 os.makedirs("images", exist_ok=True)
 
@@ -30,10 +29,12 @@ class Discriminator(nn.Module):
     def __init__(self):
         super().__init__()
         self.disc = nn.Sequential(
-            nn.Linear(image_dim, 128),
+            nn.AdaptiveAvgPool1d(4096),
+            nn.Linear(4096, 2048),
             nn.LeakyReLU(0.01),
-            nn.Linear(128, 1),
+            nn.Linear(2048, 1),
             nn.Sigmoid(),
+            nn.Tanh()
         )
 
     def forward(self, x):
@@ -44,9 +45,11 @@ class Generator(nn.Module):
     def __init__(self):
         super().__init__()
         self.gen = nn.Sequential(
-            nn.Linear(64, 256),
+            nn.Linear(64, 1024),
             nn.LeakyReLU(0.01),
-            nn.Linear(256, image_dim),
+            nn.Linear(1024, 512),
+            nn.LeakyReLU(0.01),
+            nn.Linear(512, 784),
             nn.Tanh(),  # normalize inputs to [-1, 1] so make outputs [-1, 1]
         )
 
@@ -58,21 +61,14 @@ disc = Discriminator().to(device)
 gen = Generator().to(device)
 fixed_noise = torch.randn((batch_size, z_dim)).to(device)
 
-# trm = transforms.Compose([
-#     transforms.Resize((512, 512)),
-#     transforms.ToTensor(),
-#     transforms.Normalize((0.5,), (0.5,))
-# ])
-#
-# data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
-# loader = DataLoader(data, batch_size=batch_size)
-#
-transforms = transforms.Compose(
-    [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,)), ]
-)
+trm = transforms.Compose([
+    transforms.Resize((64, 64)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
 
-dataset = datasets.MNIST(root="dataset/", transform=transforms, download=True)
-loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
+loader = DataLoader(data, batch_size=batch_size)
 
 opt_disc = optim.Adam(disc.parameters(), lr=lr)
 opt_gen = optim.Adam(gen.parameters(), lr=lr)
@@ -81,7 +77,8 @@ step = 0
 
 for epoch in range(num_epochs):
     for batch_idx, (real, _) in enumerate(loader):
-        real = real.view(-1, 784).to(device)
+        ssize = real.size(dim=0) * real.size(dim=1) * real.size(dim=2) * real.size(dim=3)
+        real = real.view(-1, ssize).to(device)
         batch_size = real.shape[0]
 
         ### Train Discriminator: max log(D(x)) + log(1 - D(G(z)))
@@ -114,9 +111,9 @@ for epoch in range(num_epochs):
             with torch.no_grad():
                 now = datetime.now(tz=pytz.timezone('Asia/Vladivostok'))
                 fake = gen(fixed_noise).reshape(-1, 1, 28, 28)
-                data = real.reshape(-1, 1, 28, 28)
+                data = real.reshape(-1, 1, 64, 64)
                 # img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
                 # img_grid_real = torchvision.utils.make_grid(data, normalize=True)
-                # save_image(real, f"images/true_{str(uuid4())}.png", normalize=True)
-                save_image(fake, f'images/fake_{now.strftime("%H:%M %d-%m-%Y")}.png', normalize=True)
+                # save_image(real, f'images/real_{now.strftime("%H:%M %d-%m-%Y")}.png')
+                save_image(fake, f'images/fake_{now.strftime("%H:%M %d-%m-%Y")}.png')
                 step += 1
