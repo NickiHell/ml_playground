@@ -15,6 +15,11 @@ torchvision = "*"
 torchaudio = "*"
 torch = "*"
 pytz = "*"
+transformers = "*"
+jax = "*"
+vqgan_jax = { git = "https://github.com/patil-suraj/vqgan-jax", branch = "main" }
+dalle-mini = { git = "https://github.com/borisdayma/dalle-mini", branch = "main" }
+stylegan2-pytorch = "^1.8.7"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"

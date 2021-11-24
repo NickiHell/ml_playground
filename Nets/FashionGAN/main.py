@@ -13,6 +13,7 @@ from torchvision.datasets import ImageFolder
 from torchvision.utils import save_image
 
 os.makedirs("images", exist_ok=True)
+os.makedirs("model", exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_epochs", type=int, default=1000, help="number of epochs of training")
@@ -22,8 +23,8 @@ parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first 
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--n_cpu", type=int, default=16, help="number of cpu threads to use during batch generation")
 parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
-parser.add_argument("--img_size", type=int, default=128, help="size of each image dimension")
-parser.add_argument("--channels", type=int, default=1, help="number of image channels")
+parser.add_argument("--img_size", type=int, default=64, help="size of each image dimension")
+parser.add_argument("--channels", type=int, default=3, help="number of image channels")
 parser.add_argument("--sample_interval", type=int, default=100, help="interval betwen image samples")
 opt = parser.parse_args()
 print(opt)
@@ -33,7 +34,7 @@ FILE_DIR = Path(__file__).resolve().parent
 
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
-cuda = True if torch.cuda.is_available() else False
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
 class Generator(nn.Module):
@@ -52,6 +53,8 @@ class Generator(nn.Module):
             *block(128, 256),
             *block(256, 512),
             *block(512, 1024),
+            *block(1024, 2048),
+            *block(2048, 1024),
             nn.Linear(1024, int(np.prod(img_shape))),
             nn.Tanh()
         )
@@ -90,20 +93,18 @@ adversarial_loss = torch.nn.BCELoss()
 generator = Generator()
 discriminator = Discriminator()
 
-if cuda:
-    generator.cuda()
-    discriminator.cuda()
-    adversarial_loss.cuda()
+generator.to(device)
+discriminator.to(device)
+adversarial_loss.to(device)
 
 # Configure data loader
 image_transforms = transforms.Compose([
     transforms.Resize((opt.img_size, opt.img_size)),
-    transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize([0.5], [0.5])
 ])
 data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=image_transforms)
-dataloader = DataLoader(data, batch_size=opt.batch_size, shuffle=True, num_workers=16)
+dataloader = DataLoader(data, batch_size=opt.batch_size, shuffle=True, num_workers=8)
 
 # os.makedirs("data/mnist", exist_ok=True)
 # dataloader = torch.utils.data.DataLoader(
@@ -126,12 +127,17 @@ dataloader = DataLoader(data, batch_size=opt.batch_size, shuffle=True, num_worke
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+Tensor = torch.cuda.FloatTensor if device.type == 'cuda' else torch.FloatTensor
+
+try:
+    generator.load_state_dict(torch.load('model/generator'))
+    discriminator.load_state_dict(torch.load('model/discriminator'))
+except FileNotFoundError:
+    pass
 
 # ----------
 #  Training
 # ----------
-
 for epoch in range(opt.n_epochs):
     for i, (imgs, _) in enumerate(dataloader):
 
@@ -181,3 +187,6 @@ for epoch in range(opt.n_epochs):
         if batches_done % opt.sample_interval == 0:
             save_image(gen_imgs.data[:1], "images/fake_%d.png" % batches_done, nrow=1, normalize=True)
             save_image(real_imgs.data[:1], "images/real_%d.png" % batches_done, nrow=1, normalize=True)
+
+    torch.save(generator.state_dict(), 'model/generator')
+    torch.save(discriminator.state_dict(), 'model/discriminator')
