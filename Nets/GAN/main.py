@@ -19,10 +19,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 lr = 3e-4
 z_dim = 64
 batch_size = 24
-num_epochs = 500
+num_epochs = 50
 
 os.makedirs("fake", exist_ok=True)
 os.makedirs("real", exist_ok=True)
+os.makedirs("result", exist_ok=True)
 
 
 class Discriminator(nn.Module):
@@ -80,6 +81,12 @@ opt_gen = optim.Adam(gen.parameters(), lr=lr)
 criterion = nn.BCELoss()
 step = 0
 
+try:
+    gen.load_state_dict(torch.load('result/generator'))
+    disc.load_state_dict(torch.load('result/discriminator'))
+except FileNotFoundError:
+    pass
+
 for epoch in range(num_epochs):
     data = ImageFolder(root=f'{BASE_DIR}/Datasets/ScarletChoir', transform=trm)
     loader = DataLoader(data, batch_size=batch_size, shuffle=True)
@@ -123,4 +130,6 @@ for epoch in range(num_epochs):
                 # img_grid_real = torchvision.utils.make_grid(data, normalize=True)
                 save_image(data, f'real/real {now.strftime("%H:%M %d-%m-%Y")}.png')
                 save_image(fake, f'fake/fake {now.strftime("%H:%M %d-%m-%Y")}.png')
+                torch.save(disc.state_dict(), 'result/discriminator')
+                torch.save(gen.state_dict(), 'result/generator')
                 step += 1
