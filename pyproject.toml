@@ -16,10 +16,8 @@ torchaudio = "*"
 torch = "*"
 pytz = "*"
 transformers = "*"
-stylegan2-pytorch = "*"
-torchtext = "^0.11.0"
-utils = "^1.0.1"
-transforms = "^0.1"
+torchtext = "*"
+utils = "*"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"

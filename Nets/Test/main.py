@@ -1,5 +1,6 @@
-from dalle_mini.model import CustomFlaxBartForConditionalGeneration
-from transformers import BartTokenizer
+from asrecognition import ASREngine
 
-tokenizer = BartTokenizer.from_pretrained('flax-community/dalle-mini')
-model = CustomFlaxBartForConditionalGeneration.from_pretrained('flax-community/dalle-mini')
+asr = ASREngine("ru", model_path="jonatasgrosman/wav2vec2-large-xlsr-53-russian")
+
+audio_paths = ["/path/to/file.mp3", "/path/to/another_file.wav"]
+transcriptions = asr.transcribe(audio_paths)
