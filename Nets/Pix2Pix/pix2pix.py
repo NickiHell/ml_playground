@@ -25,7 +25,7 @@ parser.add_argument("--img_height", type=int, default=256, help="size of image h
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 parser.add_argument("--channels", type=int, default=3, help="number of image channels")
 parser.add_argument(
-    "--sample_interval", type=int, default=10, help="interval between sampling of images from generators"
+    "--sample_interval", type=int, default=5000, help="interval between sampling of images from generators"
 )
 parser.add_argument("--checkpoint_interval", type=int, default=1, help="interval between model checkpoints")
 opt = parser.parse_args()
