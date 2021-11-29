@@ -31,8 +31,9 @@ parser.add_argument("--checkpoint_interval", type=int, default=1, help="interval
 opt = parser.parse_args()
 print(opt)
 
-os.makedirs("images/%s" % opt.dataset_name, exist_ok=True)
-os.makedirs("saved_models/%s" % opt.dataset_name, exist_ok=True)
+os.makedirs("images/fakes", exist_ok=True)
+os.makedirs("images/setka", exist_ok=True)
+os.makedirs("saved_models/", exist_ok=True)
 
 cuda = True if torch.cuda.is_available() else False
 
@@ -58,8 +59,8 @@ if cuda:
 
 if opt.epoch != 0:
     # Load pretrained models
-    generator.load_state_dict(torch.load("saved_models/%s/generator_%d.pth" % (opt.dataset_name, opt.epoch)))
-    discriminator.load_state_dict(torch.load("saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, opt.epoch)))
+    generator.load_state_dict(torch.load("saved_models/generator_%d.pth" % opt.epoch))
+    discriminator.load_state_dict(torch.load("saved_models/discriminator_%d.pth" % opt.epoch))
 else:
     # Initialize weights
     generator.apply(weights_init_normal)
