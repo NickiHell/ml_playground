@@ -12,7 +12,7 @@ from datasets import *
 from models import *
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--epoch", type=int, default=14, help="epoch to start training from")
+parser.add_argument("--epoch", type=int, default=18, help="epoch to start training from")
 parser.add_argument("--n_epochs", type=int, default=200, help="number of epochs of training")
 parser.add_argument("--dataset_name", type=str, default="ScarletChoir", help="name of the dataset")
 parser.add_argument("--batch_size", type=int, default=4, help="size of the batches")
