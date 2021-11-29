@@ -25,7 +25,7 @@ parser.add_argument("--img_height", type=int, default=256, help="size of image h
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 parser.add_argument("--channels", type=int, default=3, help="number of image channels")
 parser.add_argument(
-    "--sample_interval", type=int, default=5000, help="interval between sampling of images from generators"
+    "--sample_interval", type=int, default=1500, help="interval between sampling of images from generators"
 )
 parser.add_argument("--checkpoint_interval", type=int, default=1, help="interval between model checkpoints")
 opt = parser.parse_args()
@@ -195,5 +195,5 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
     if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
         # Save model checkpoints
-        torch.save(generator.state_dict(), "saved_models/%s/generator_%d.pth" % (opt.dataset_name, epoch))
-        torch.save(discriminator.state_dict(), "saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, epoch))
+        torch.save(generator.state_dict(), f'saved_models/generator_{epoch}.pth')
+        torch.save(discriminator.state_dict(), f'saved_models/discriminator_{epoch}.pth')
