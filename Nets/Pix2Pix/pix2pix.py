@@ -25,7 +25,7 @@ parser.add_argument("--img_height", type=int, default=256, help="size of image h
 parser.add_argument("--img_width", type=int, default=256, help="size of image width")
 parser.add_argument("--channels", type=int, default=3, help="number of image channels")
 parser.add_argument(
-    "--sample_interval", type=int, default=5000, help="interval between sampling of images from generators"
+    "--sample_interval", type=int, default=10, help="interval between sampling of images from generators"
 )
 parser.add_argument("--checkpoint_interval", type=int, default=1, help="interval between model checkpoints")
 opt = parser.parse_args()
@@ -103,7 +103,7 @@ def sample_images(batches_done):
     fake_B = generator(real_A)
     img_sample = torch.cat((real_A.data, fake_B.data, real_B.data), -2)
     save_image(img_sample, f"images/setka/{batches_done}.png", nrow=5, normalize=True)
-    save_image(fake_B, f"images/fakes/{batches_done}.png", nrow=1, normalize=True)
+    save_image(fake_B.data[:1], f"images/fakes/{batches_done}.png", nrow=1, normalize=True)
 
 
 # ----------
